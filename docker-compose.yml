@@ -1,0 +1,26 @@
+version: '3.1'
+
+services:
+  postgres:
+    image: postgres
+    container_name: socialnetwork_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: Test1234
+      POSTGRES_DB: postgres
+    volumes:
+      - sn_postgres:/var/lib/postgresql/data/
+    ports:
+      - 5432:5432
+  socialnetwork:
+    image: socialnetwork_otus
+    build:
+      context: ./src
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_HOSTNAME: socialnetwork_postgres
+    ports:
+      - 8080:8080
+
+volumes:
+  sn_postgres:
