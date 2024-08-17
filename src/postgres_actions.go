@@ -2,10 +2,10 @@ package main
 
 import (
 	"cloud.google.com/go/civil"
-	"database/sql"
-	"errors"
+	"context"
 	"fmt"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v4/pgxpool"
 	_ "github.com/lib/pq"
 	"log"
 	"time"
@@ -19,6 +19,8 @@ var (
 	Database = "social_network"
 )
 
+var DbPool *pgxpool.Pool
+
 type User struct {
 	Id         uuid.UUID
 	FirstName  string
@@ -29,50 +31,38 @@ type User struct {
 	Password   string
 }
 
-func ConnectPostgres() *sql.DB {
+func ConnectPostgresUsingPool() *pgxpool.Pool {
 	connString := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
 		Hostname, Port, Username, Password, Database)
 
-	db, err := sql.Open("postgres", connString)
+	config, err := pgxpool.ParseConfig(connString)
 
 	if err != nil {
 		log.Fatal(err)
-		return nil
 	}
 
-	return db
+	dbPool, err := pgxpool.ConnectConfig(context.Background(), config)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return dbPool
 }
 
 func InsertUser(user User) error {
-	db := ConnectPostgres()
-
-	if db == nil {
-		return errors.New("error connecting to database")
-	}
-
-	defer db.Close()
-
-	stmt, err := db.Prepare("INSERT INTO users(id, first_name, second_name, birthdate, biography, city, password) VALUES($1, $2, $3, $4, $5, $6, $7)")
+	_, err := DbPool.Exec(context.Background(), "INSERT INTO users(id, first_name, second_name, birthdate, biography, city, password) VALUES($1, $2, $3, $4, $5, $6, $7)",
+		user.Id.String(), user.FirstName, user.SecondName, user.BirthDate.String(), user.Biography, user.City, user.Password)
 
 	if err != nil {
 		return err
 	}
 
-	_, err = stmt.Exec(user.Id.String(), user.FirstName, user.SecondName, user.BirthDate.String(), user.Biography, user.City, user.Password)
-
 	return err
 }
 
 func FindUserById(id uuid.UUID) (User, error) {
-	db := ConnectPostgres()
-
-	if db == nil {
-		return User{}, errors.New("error connecting to database")
-	}
-
-	defer db.Close()
-
-	row := db.QueryRow("SELECT id, first_name, second_name, birthdate, biography, city, password FROM users WHERE id = $1", id)
+	row := DbPool.QueryRow(context.Background(), "SELECT id, first_name, second_name, birthdate, biography, city, password FROM users WHERE id = $1", id)
 
 	user := User{}
 
@@ -90,14 +80,6 @@ func FindUserById(id uuid.UUID) (User, error) {
 }
 
 func SearchUsersByName(firstname string, lastname string) ([]User, error) {
-	db := ConnectPostgres()
-
-	if db == nil {
-		return []User{}, errors.New("error connecting to database")
-	}
-
-	defer db.Close()
-
 	sql := "SELECT id, first_name, second_name, birthdate, biography, city, password FROM users"
 
 	if firstname != "" && lastname != "" {
@@ -110,11 +92,13 @@ func SearchUsersByName(firstname string, lastname string) ([]User, error) {
 
 	sql += " ORDER BY id"
 
-	rows, err := db.Query(sql, firstname, lastname)
+	rows, err := DbPool.Query(context.Background(), sql, firstname, lastname)
 
 	if err != nil {
 		return []User{}, err
 	}
+
+	defer rows.Close()
 
 	users := []User{}
 

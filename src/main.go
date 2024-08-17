@@ -28,6 +28,9 @@ func main() {
 	router.HandleFunc("/user/get/{id}", TokenAuthMiddleware(GetUserByIdHandler)).Methods(http.MethodGet)
 	router.HandleFunc("/user/search", SearchUsersHandler).Methods(http.MethodGet)
 
+	DbPool = ConnectPostgresUsingPool()
+	defer DbPool.Close()
+
 	err := http.ListenAndServe(":8080", router)
 
 	if err != nil {
