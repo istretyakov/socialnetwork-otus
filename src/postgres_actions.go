@@ -19,6 +19,16 @@ var (
 	Database = "social_network"
 )
 
+type User struct {
+	Id         uuid.UUID
+	FirstName  string
+	SecondName string
+	BirthDate  civil.Date
+	Biography  string
+	City       string
+	Password   string
+}
+
 func ConnectPostgres() *sql.DB {
 	connString := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
 		Hostname, Port, Username, Password, Database)
@@ -37,7 +47,7 @@ func InsertUser(user User) error {
 	db := ConnectPostgres()
 
 	if db == nil {
-		return errors.New("Error connecting to database")
+		return errors.New("error connecting to database")
 	}
 
 	defer db.Close()
@@ -57,7 +67,7 @@ func FindUserById(id uuid.UUID) (User, error) {
 	db := ConnectPostgres()
 
 	if db == nil {
-		return User{}, errors.New("Error connecting to database")
+		return User{}, errors.New("error connecting to database")
 	}
 
 	defer db.Close()
@@ -77,4 +87,51 @@ func FindUserById(id uuid.UUID) (User, error) {
 	}
 
 	return user, nil
+}
+
+func SearchUsersByName(firstname string, lastname string) ([]User, error) {
+	db := ConnectPostgres()
+
+	if db == nil {
+		return []User{}, errors.New("error connecting to database")
+	}
+
+	defer db.Close()
+
+	sql := "SELECT id, first_name, second_name, birthdate, biography, city, password FROM users"
+
+	if firstname != "" && lastname != "" {
+		sql += " WHERE first_name LIKE $1 AND second_name LIKE $2"
+	} else if firstname != "" {
+		sql += " WHERE first_name LIKE $1"
+	} else if lastname != "" {
+		sql += " WHERE second_name LIKE $1"
+	}
+
+	sql += " ORDER BY id"
+
+	rows, err := db.Query(sql, firstname, lastname)
+
+	if err != nil {
+		return []User{}, err
+	}
+
+	users := []User{}
+
+	for rows.Next() {
+		user := User{}
+		var birthDate time.Time
+
+		err := rows.Scan(&user.Id, &user.FirstName, &user.SecondName, &birthDate, &user.Biography, &user.City, &user.Password)
+
+		if err != nil {
+			return []User{}, err
+		}
+
+		user.BirthDate = civil.DateOf(birthDate)
+
+		users = append(users, user)
+	}
+
+	return users, nil
 }
