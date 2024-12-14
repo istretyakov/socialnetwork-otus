@@ -155,9 +155,8 @@ func GetUserByIdHandler(w http.ResponseWriter, r *http.Request) {
 
 	user, err := FindUserById(id)
 
-	if err != nil {
-		log.Println(err)
-		w.WriteHeader(http.StatusBadRequest)
+	if err != nil {   
+		w.WriteHeader(http.StatusNotFound)
 		return
 	}
 

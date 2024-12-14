@@ -1,3 +1,5 @@
+BEGIN;
+
 DROP TABLE IF EXISTS public.users;
 
 CREATE TABLE IF NOT EXISTS public.users
@@ -10,8 +12,9 @@ CREATE TABLE IF NOT EXISTS public.users
     birthdate date,
     password character varying(255) COLLATE pg_catalog."default"
 )
-
 TABLESPACE pg_default;
+
+COMMIT;
 
 ALTER TABLE IF EXISTS public.users
     OWNER to postgres;

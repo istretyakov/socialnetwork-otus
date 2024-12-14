@@ -1,25 +1,36 @@
 package main
 
 import (
+	"fmt"
 	"github.com/gorilla/mux"
 	"github.com/spf13/viper"
 	"log"
 	"net/http"
+	"os"
+	"strings"
 )
 
 func main() {
-	viper.SetConfigName("config")
-	viper.SetConfigType("yaml")
-	viper.AddConfigPath(".")
+	environmentName := os.Getenv("ENVIRONMENT")
 
-	if err := viper.ReadInConfig(); err != nil {
+	if err := initializeConfig(environmentName); err != nil {
 		log.Fatalf("Error reading config file, %s", err)
 		return
 	}
 
-	viper.BindEnv("database.hostname", "DATABASE_HOSTNAME")
+	if err := viper.Unmarshal(&DatabaseSettings); err != nil {
+		log.Fatalf("unable to decode into struct, %v", err)
+		return
+	}
 
-	Hostname = viper.GetString("database.hostname")
+	if err := initializeDatabases(DatabaseSettings); err != nil {
+		log.Fatalf("Error connecting to database, %s", err)
+		return
+	}
+
+	for _, readerDbPool := range ReaderDbPools {
+		defer readerDbPool.Close()
+	}
 
 	router := mux.NewRouter()
 
@@ -28,12 +39,46 @@ func main() {
 	router.HandleFunc("/user/get/{id}", TokenAuthMiddleware(GetUserByIdHandler)).Methods(http.MethodGet)
 	router.HandleFunc("/user/search", SearchUsersHandler).Methods(http.MethodGet)
 
-	DbPool = ConnectPostgresUsingPool()
-	defer DbPool.Close()
+	if err := http.ListenAndServe(":8100", router); err != nil {
+		log.Fatalf("Error starting server, %s", err)
+		return
+	}
+}
 
-	err := http.ListenAndServe(":8080", router)
+func initializeConfig(environmentName string) error {
+	viper.SetConfigName(fmt.Sprint("config.", environmentName))
+	viper.SetConfigType("yaml")
+	viper.AddConfigPath(".")
+	viper.AutomaticEnv()
+
+	replacer := strings.NewReplacer(".", "_")
+	viper.SetEnvKeyReplacer(replacer)
+
+	err := viper.ReadInConfig()
+
+	return err
+}
+
+func initializeDatabases(config Config) error {
+	masterDbPool, err := ConnectPostgresUsingPool(DatabaseSettings.Databases.Master)
 
 	if err != nil {
-		log.Fatalf("Error starting server, %s", err)
+		return err
 	}
+
+	MasterDbPool = masterDbPool
+
+	ReaderDbPools = append(ReaderDbPools, MasterDbPool)
+
+	for _, slaveSettings := range DatabaseSettings.Databases.Slaves {
+		slaveDbPool, err := ConnectPostgresUsingPool(slaveSettings)
+
+		if err != nil {
+			return err
+		}
+
+		ReaderDbPools = append(ReaderDbPools, slaveDbPool)
+	}
+
+	return nil
 }

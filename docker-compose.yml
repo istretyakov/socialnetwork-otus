@@ -1,26 +1,63 @@
 version: '3.1'
 
 services:
-  postgres:
+  postgres_1:
     image: postgres
-    container_name: socialnetwork_postgres
+    networks:
+      - my_custom_network
+    container_name: socialnetwork_postgres_1
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: Test1234
       POSTGRES_DB: postgres
     volumes:
-      - sn_postgres:/var/lib/postgresql/data/
+      - sn_postgres_1:/var/lib/postgresql/data/
     ports:
       - 5432:5432
+  postgres_2:
+    image: postgres
+    networks:
+      - my_custom_network
+    container_name: socialnetwork_postgres_2
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: Test1234
+      POSTGRES_DB: postgres
+    volumes:
+      - sn_postgres_2:/var/lib/postgresql/data/
+    ports:
+      - 6432:5432
+  postgres_3:
+    image: postgres
+    networks:
+      - my_custom_network
+    container_name: socialnetwork_postgres_3
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: Test1234
+      POSTGRES_DB: postgres
+    volumes:
+      - sn_postgres_3:/var/lib/postgresql/data/
+    ports:
+      - 7432:5432
   socialnetwork:
     image: socialnetwork_otus
+    networks:
+      - my_custom_network
+    container_name: socialnetwork_otus
     build:
       context: ./src
       dockerfile: Dockerfile
     environment:
-      DATABASE_HOSTNAME: socialnetwork_postgres
+      ENVIRONMENT: Docker
     ports:
-      - 8080:8080
+      - 8100:8100
 
 volumes:
-  sn_postgres:
+  sn_postgres_1:
+  sn_postgres_2:
+  sn_postgres_3:
+
+networks:
+  my_custom_network:
+    external: true

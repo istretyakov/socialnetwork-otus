@@ -8,18 +8,29 @@ import (
 	"github.com/jackc/pgx/v4/pgxpool"
 	_ "github.com/lib/pq"
 	"log"
+	"math/rand"
 	"time"
 )
 
-var (
-	Hostname = "socialnetwork_postgres"
-	Port     = "5432"
-	Username = "postgres"
-	Password = "Test1234"
-	Database = "social_network"
-)
+type DatabaseConfig struct {
+	Hostname string `mapstructure:"hostname"`
+	Port     string `mapstructure:"port"`
+	Username string `mapstructure:"username"`
+	Password string `mapstructure:"password"`
+	Database string `mapstructure:"database"`
+}
 
-var DbPool *pgxpool.Pool
+type Config struct {
+	Databases struct {
+		Master DatabaseConfig   `mapstructure:"master"`
+		Slaves []DatabaseConfig `mapstructure:"slaves"`
+	} `mapstructure:"databases"`
+}
+
+var DatabaseSettings Config
+
+var MasterDbPool *pgxpool.Pool
+var ReaderDbPools []*pgxpool.Pool
 
 type User struct {
 	Id         uuid.UUID
@@ -31,27 +42,39 @@ type User struct {
 	Password   string
 }
 
-func ConnectPostgresUsingPool() *pgxpool.Pool {
+func ConnectPostgresUsingPool(databaseConfig DatabaseConfig) (*pgxpool.Pool, error) {
 	connString := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
-		Hostname, Port, Username, Password, Database)
+		databaseConfig.Hostname,
+		databaseConfig.Port,
+		databaseConfig.Username,
+		databaseConfig.Password,
+		databaseConfig.Database)
 
 	config, err := pgxpool.ParseConfig(connString)
 
 	if err != nil {
 		log.Fatal(err)
+		return nil, err
 	}
 
 	dbPool, err := pgxpool.ConnectConfig(context.Background(), config)
 
 	if err != nil {
 		log.Fatal(err)
+		return nil, err
 	}
 
-	return dbPool
+	return dbPool, nil
+}
+
+func GetReaderDbPool() *pgxpool.Pool {
+	src := rand.NewSource(time.Now().UnixNano())
+	r := rand.New(src)
+	return ReaderDbPools[r.Intn(len(ReaderDbPools))]
 }
 
 func InsertUser(user User) error {
-	_, err := DbPool.Exec(context.Background(), "INSERT INTO users(id, first_name, second_name, birthdate, biography, city, password) VALUES($1, $2, $3, $4, $5, $6, $7)",
+	_, err := MasterDbPool.Exec(context.Background(), "INSERT INTO users(id, first_name, second_name, birthdate, biography, city, password) VALUES($1, $2, $3, $4, $5, $6, $7)",
 		user.Id.String(), user.FirstName, user.SecondName, user.BirthDate.String(), user.Biography, user.City, user.Password)
 
 	if err != nil {
@@ -62,7 +85,7 @@ func InsertUser(user User) error {
 }
 
 func FindUserById(id uuid.UUID) (User, error) {
-	row := DbPool.QueryRow(context.Background(), "SELECT id, first_name, second_name, birthdate, biography, city, password FROM users WHERE id = $1", id)
+	row := GetReaderDbPool().QueryRow(context.Background(), "SELECT id, first_name, second_name, birthdate, biography, city, password FROM users WHERE id = $1", id)
 
 	user := User{}
 
@@ -92,7 +115,7 @@ func SearchUsersByName(firstname string, lastname string) ([]User, error) {
 
 	sql += " ORDER BY id"
 
-	rows, err := DbPool.Query(context.Background(), sql, firstname, lastname)
+	rows, err := GetReaderDbPool().Query(context.Background(), sql, firstname, lastname)
 
 	if err != nil {
 		return []User{}, err
